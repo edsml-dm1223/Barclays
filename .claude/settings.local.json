@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__notion__API-get-self",
+      "mcp__notion__API-post-search",
+      "mcp__notion__API-post-page",
+      "mcp__notion__API-patch-block-children",
+      "mcp__notion__API-delete-a-block",
+      "mcp__notion__API-get-block-children",
+      "Bash(python3:*)",
+      "mcp__vercel__getDeployments",
+      "mcp__vercel__getDeployment",
+      "Bash(git add:*)"
+    ]
+  }
+}

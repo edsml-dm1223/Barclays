@@ -1,0 +1,230 @@
+{
+  "low": {
+    "name": "Low Income",
+    "range": "< \u00a31,000/mo",
+    "total_customers_analyzed": 337,
+    "top10_brands": [
+      {
+        "primary_merchant": "TESCO_GENERAL",
+        "customer_count": 290,
+        "customer_pct": 86.1
+      },
+      {
+        "primary_merchant": "AMAZON_MARKETPLACE",
+        "customer_count": 273,
+        "customer_pct": 81.0
+      },
+      {
+        "primary_merchant": "SUMUP",
+        "customer_count": 261,
+        "customer_pct": 77.4
+      },
+      {
+        "primary_merchant": "MCDONALD'S",
+        "customer_count": 255,
+        "customer_pct": 75.7
+      },
+      {
+        "primary_merchant": "SAINSBURY'S",
+        "customer_count": 236,
+        "customer_pct": 70.0
+      },
+      {
+        "primary_merchant": "ASDA_GENERAL",
+        "customer_count": 230,
+        "customer_pct": 68.2
+      },
+      {
+        "primary_merchant": "BOOTS",
+        "customer_count": 221,
+        "customer_pct": 65.6
+      },
+      {
+        "primary_merchant": "PAYPAL",
+        "customer_count": 209,
+        "customer_pct": 62.0
+      },
+      {
+        "primary_merchant": "APPLE_GENERAL",
+        "customer_count": 205,
+        "customer_pct": 60.8
+      },
+      {
+        "primary_merchant": "ALDI",
+        "customer_count": 199,
+        "customer_pct": 59.1
+      }
+    ]
+  },
+  "lower_middle": {
+    "name": "Lower-Middle",
+    "range": "\u00a31,000 - \u00a32,000/mo",
+    "total_customers_analyzed": 204,
+    "top10_brands": [
+      {
+        "primary_merchant": "TESCO_GENERAL",
+        "customer_count": 180,
+        "customer_pct": 88.2
+      },
+      {
+        "primary_merchant": "AMAZON_MARKETPLACE",
+        "customer_count": 171,
+        "customer_pct": 83.8
+      },
+      {
+        "primary_merchant": "MCDONALD'S",
+        "customer_count": 165,
+        "customer_pct": 80.9
+      },
+      {
+        "primary_merchant": "SUMUP",
+        "customer_count": 158,
+        "customer_pct": 77.5
+      },
+      {
+        "primary_merchant": "ASDA_GENERAL",
+        "customer_count": 157,
+        "customer_pct": 77.0
+      },
+      {
+        "primary_merchant": "SAINSBURY'S",
+        "customer_count": 152,
+        "customer_pct": 74.5
+      },
+      {
+        "primary_merchant": "PAYPAL",
+        "customer_count": 145,
+        "customer_pct": 71.1
+      },
+      {
+        "primary_merchant": "BOOTS",
+        "customer_count": 137,
+        "customer_pct": 67.2
+      },
+      {
+        "primary_merchant": "GREGGS",
+        "customer_count": 127,
+        "customer_pct": 62.3
+      },
+      {
+        "primary_merchant": "ALDI",
+        "customer_count": 126,
+        "customer_pct": 61.8
+      }
+    ]
+  },
+  "upper_middle": {
+    "name": "Upper-Middle",
+    "range": "\u00a32,000 - \u00a36,000/mo",
+    "total_customers_analyzed": 251,
+    "top10_brands": [
+      {
+        "primary_merchant": "TESCO_GENERAL",
+        "customer_count": 230,
+        "customer_pct": 91.6
+      },
+      {
+        "primary_merchant": "AMAZON_MARKETPLACE",
+        "customer_count": 217,
+        "customer_pct": 86.5
+      },
+      {
+        "primary_merchant": "MCDONALD'S",
+        "customer_count": 212,
+        "customer_pct": 84.5
+      },
+      {
+        "primary_merchant": "SAINSBURY'S",
+        "customer_count": 210,
+        "customer_pct": 83.7
+      },
+      {
+        "primary_merchant": "SUMUP",
+        "customer_count": 209,
+        "customer_pct": 83.3
+      },
+      {
+        "primary_merchant": "ASDA_GENERAL",
+        "customer_count": 199,
+        "customer_pct": 79.3
+      },
+      {
+        "primary_merchant": "PAYPAL",
+        "customer_count": 188,
+        "customer_pct": 74.9
+      },
+      {
+        "primary_merchant": "BOOTS",
+        "customer_count": 176,
+        "customer_pct": 70.1
+      },
+      {
+        "primary_merchant": "ALDI",
+        "customer_count": 170,
+        "customer_pct": 67.7
+      },
+      {
+        "primary_merchant": "APPLE_GENERAL",
+        "customer_count": 163,
+        "customer_pct": 64.9
+      }
+    ]
+  },
+  "high": {
+    "name": "High Income",
+    "range": "> \u00a36,000/mo",
+    "total_customers_analyzed": 52,
+    "top10_brands": [
+      {
+        "primary_merchant": "SUMUP",
+        "customer_count": 47,
+        "customer_pct": 90.4
+      },
+      {
+        "primary_merchant": "TESCO_GENERAL",
+        "customer_count": 46,
+        "customer_pct": 88.5
+      },
+      {
+        "primary_merchant": "AMAZON_MARKETPLACE",
+        "customer_count": 45,
+        "customer_pct": 86.5
+      },
+      {
+        "primary_merchant": "SAINSBURY'S",
+        "customer_count": 45,
+        "customer_pct": 86.5
+      },
+      {
+        "primary_merchant": "BOOTS",
+        "customer_count": 41,
+        "customer_pct": 78.8
+      },
+      {
+        "primary_merchant": "PAYPAL",
+        "customer_count": 40,
+        "customer_pct": 76.9
+      },
+      {
+        "primary_merchant": "MARKS & SPENCER",
+        "customer_count": 40,
+        "customer_pct": 76.9
+      },
+      {
+        "primary_merchant": "MCDONALD'S",
+        "customer_count": 39,
+        "customer_pct": 75.0
+      },
+      {
+        "primary_merchant": "PARKING",
+        "customer_count": 35,
+        "customer_pct": 67.3
+      },
+      {
+        "primary_merchant": "APPLE_GENERAL",
+        "customer_count": 34,
+        "customer_pct": 65.4
+      }
+    ]
+  }
+}
