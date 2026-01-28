@@ -1,6 +1,6 @@
 """
 Chatbot Analytics Backend
-Conversational AI for transaction data analysis with context and retry logic
+Conversational AI with true context - remembers previous results and builds on them
 """
 
 import os
@@ -15,6 +15,7 @@ from anthropic import Anthropic
 from io import StringIO
 from datetime import datetime, timedelta
 from typing import Optional
+import gc
 
 app = FastAPI(title="Chatbot Analytics API")
 
@@ -29,21 +30,22 @@ app.add_middleware(
 
 # Load data once at startup
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "columns_selected.parquet")
-df = None
+df_original = None
 
-# Session storage (in-memory - resets on restart)
+# Session storage with results
 sessions = {}
 SESSION_TIMEOUT = timedelta(hours=2)
 
 
 @app.on_event("startup")
 async def load_data():
-    global df
+    global df_original
     full_df = pd.read_parquet(DATA_PATH)
     # Sample 200K rows to fit in 512MB memory limit
-    df = full_df.sample(n=200000, random_state=42)
-    del full_df  # Free memory
-    print(f"Loaded {len(df):,} transactions (sampled)")
+    df_original = full_df.sample(n=200000, random_state=42)
+    del full_df
+    gc.collect()
+    print(f"Loaded {len(df_original):,} transactions (sampled)")
 
 
 class ChatRequest(BaseModel):
@@ -57,7 +59,7 @@ class ChatResponse(BaseModel):
     session_id: str
 
 
-# Data schema for Claude context
+# Data schema for Claude
 DATA_SCHEMA = """
 The DataFrame 'df' contains transaction data with these columns:
 - primary_merchant: string - merchant name (e.g., "AMAZON_MARKETPLACE", "TESCO_GENERAL")
@@ -69,47 +71,76 @@ The DataFrame 'df' contains transaction data with these columns:
 - amount: float - transaction amount (always positive)
 - credit_debit: string - EXACTLY "credit" or "debit" (lowercase!)
 - timestamp: datetime - full timestamp with time
-- avg_amount_by_classification: float - average amount for this classification
-- total_txn_by_classification: int - total transactions in this classification
 
-IMPORTANT DATA FACTS:
-- Total rows: ~200,000 transactions (sampled from 838K for performance)
-- credit_debit values are LOWERCASE: "credit" or "debit"
+IMPORTANT:
+- ~200,000 transactions (sampled from 838K)
+- credit_debit values are LOWERCASE
 - All amounts are positive numbers
 """
 
 
-CODE_SYSTEM_PROMPT = f"""You are a data analyst. Write Python pandas code to answer the user's question.
+ROUTING_PROMPT = """You are analyzing a user's question about transaction data.
 
-{DATA_SCHEMA}
+Previous conversation:
+{history}
+
+Current data state (first 5 rows of working dataset with {row_count} total rows):
+{data_preview}
+
+User's new question: {question}
+
+Is this a REFINEMENT of the previous result (e.g., "filter this", "remove X", "show only Y", "take off Z")
+or a completely NEW question (e.g., "what about categories", "show me something different")?
+
+Respond with ONLY one word: REFINE or NEW"""
+
+
+CODE_PROMPT = """You are a data analyst. Write Python pandas code to answer the user's question.
+
+{schema}
+
+CURRENT DATA STATE:
+The DataFrame 'df' currently has {row_count} rows.
+Preview (first 10 rows):
+{data_preview}
+
+Previous conversation for context:
+{history}
+
+User's question: {question}
 
 Rules:
-- The DataFrame is already loaded as 'df'
-- Store your final result in a variable called 'result'
+- DataFrame is loaded as 'df' - work with it directly
+- Store final result in variable 'result'
 - Keep code simple and robust
-- For time-based queries, df['timestamp'] is datetime with timezone
-- For time extraction: df['timestamp'].dt.time
-- For day of week: df['timestamp'].dt.day_name()
-- Always limit large results to top 20 rows using .head(20)
-- Use .copy() when modifying data
-- String comparisons are case-sensitive! Use exact values from the schema.
+- Use lowercase for string comparisons (e.g., "credit" not "Credit")
+- Limit results to top 20 with .head(20)
+- For filtering, use str.contains() for partial matches or isin() for exact matches
 
-Respond with ONLY valid Python code, no explanations or markdown."""
+Write ONLY Python code, no explanations:"""
 
 
-RESPONSE_SYSTEM_PROMPT = """You are a friendly data analyst assistant having a conversation with a user about their transaction data.
+RESPONSE_PROMPT = """You are a friendly data analyst assistant.
 
-Based on the analysis results, write a natural conversational response that:
-1. Directly answers their question in plain English
-2. Highlights key insights from the data
-3. Is concise but informative (2-4 sentences)
-4. References previous context when relevant
+User asked: {question}
 
-Do NOT mention code, DataFrames, pandas, or technical details. Just have a natural conversation."""
+Here is the ACTUAL data result (you MUST base your response on these exact numbers):
+{result_preview}
+
+Previous conversation context:
+{history}
+
+Write a conversational response that:
+1. Directly describes what the data shows using the EXACT numbers from the result
+2. Is concise (2-3 sentences)
+3. References the context if it's a follow-up question
+
+CRITICAL: Your response MUST match the actual data shown above. Do not make up or assume numbers."""
 
 
-def get_or_create_session(session_id: Optional[str]) -> tuple[str, list]:
+def get_or_create_session(session_id: Optional[str]) -> dict:
     """Get existing session or create new one."""
+    global df_original
     now = datetime.now()
 
     # Clean old sessions
@@ -118,37 +149,57 @@ def get_or_create_session(session_id: Optional[str]) -> tuple[str, list]:
     for sid in expired:
         del sessions[sid]
 
+    if expired:
+        gc.collect()
+
     # Get or create session
     if session_id and session_id in sessions:
         sessions[session_id]['last_access'] = now
-        return session_id, sessions[session_id]['history']
+        return sessions[session_id]
 
     # Create new session
     new_id = str(uuid.uuid4())[:8]
     sessions[new_id] = {
+        'id': new_id,
         'history': [],
-        'last_access': now
+        'last_access': now,
+        'current_df': df_original.copy(),  # Start with full data
+        'last_code': None
     }
-    return new_id, sessions[new_id]['history']
+    return sessions[new_id]
 
 
-def add_to_history(session_id: str, role: str, content: str):
+def add_to_history(session: dict, role: str, content: str):
     """Add a message to session history."""
-    if session_id in sessions:
-        sessions[session_id]['history'].append({
-            'role': role,
-            'content': content
-        })
-        # Keep only last 10 exchanges (20 messages) to manage context size
-        if len(sessions[session_id]['history']) > 20:
-            sessions[session_id]['history'] = sessions[session_id]['history'][-20:]
+    session['history'].append({'role': role, 'content': content})
+    # Keep last 6 exchanges
+    if len(session['history']) > 12:
+        session['history'] = session['history'][-12:]
+
+
+def get_history_text(history: list) -> str:
+    """Format history for prompts."""
+    if not history:
+        return "No previous conversation."
+
+    text = ""
+    for msg in history[-6:]:
+        role = "User" if msg['role'] == 'user' else "Assistant"
+        content = msg['content'][:300] + "..." if len(msg['content']) > 300 else msg['content']
+        text += f"{role}: {content}\n"
+    return text
+
+
+def get_data_preview(df: pd.DataFrame, rows: int = 10) -> str:
+    """Get a string preview of the dataframe."""
+    return df.head(rows).to_string()
 
 
 def execute_code(code: str, dataframe: pd.DataFrame) -> tuple:
-    """Safely execute pandas code and return result."""
+    """Execute pandas code and return result."""
     namespace = {
         'pd': pd,
-        'df': dataframe.copy(),
+        'df': dataframe,
     }
 
     old_stdout = sys.stdout
@@ -165,38 +216,22 @@ def execute_code(code: str, dataframe: pd.DataFrame) -> tuple:
         sys.stdout = old_stdout
 
 
-def format_result_for_claude(result, output) -> str:
-    """Format the execution result for Claude to interpret."""
+def format_result_preview(result) -> str:
+    """Format result for Claude to see exact data."""
     if isinstance(result, pd.DataFrame):
-        return f"DataFrame with {len(result)} rows:\n{result.head(20).to_string()}"
+        return f"DataFrame ({len(result)} rows):\n{result.to_string()}"
     elif isinstance(result, pd.Series):
-        return f"Series:\n{result.head(20).to_string()}"
+        return f"Series:\n{result.to_string()}"
     elif result is not None:
         return str(result)
-    elif output:
-        return output
     return "No result"
-
-
-def build_conversation_context(history: list) -> str:
-    """Build a summary of conversation history for context."""
-    if not history:
-        return ""
-
-    context = "Previous conversation:\n"
-    for msg in history[-6:]:  # Last 3 exchanges
-        role = "User" if msg['role'] == 'user' else "Assistant"
-        # Truncate long messages
-        content = msg['content'][:200] + "..." if len(msg['content']) > 200 else msg['content']
-        context += f"{role}: {content}\n"
-    return context + "\n"
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    global df
+    global df_original
 
-    if df is None:
+    if df_original is None:
         raise HTTPException(status_code=500, detail="Data not loaded")
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -204,48 +239,76 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
 
     client = Anthropic(api_key=api_key)
+    session = get_or_create_session(request.session_id)
 
-    # Get or create session
-    session_id, history = get_or_create_session(request.session_id)
+    add_to_history(session, 'user', request.message)
+    history_text = get_history_text(session['history'][:-1])
 
-    # Add user message to history
-    add_to_history(session_id, 'user', request.message)
+    # Step 1: Determine if this is a refinement or new question
+    is_refinement = False
+    if session['last_code'] and len(session['history']) > 1:
+        try:
+            routing_response = client.messages.create(
+                model="claude-opus-4-5-20251101",
+                max_tokens=10,
+                messages=[{
+                    "role": "user",
+                    "content": ROUTING_PROMPT.format(
+                        history=history_text,
+                        data_preview=get_data_preview(session['current_df'], 5),
+                        row_count=len(session['current_df']),
+                        question=request.message
+                    )
+                }]
+            )
+            decision = routing_response.content[0].text.strip().upper()
+            is_refinement = "REFINE" in decision
+        except:
+            is_refinement = False
 
-    # Build context from history
-    context = build_conversation_context(history[:-1])  # Exclude current message
+    # Choose which dataframe to work with
+    if is_refinement:
+        working_df = session['current_df']
+    else:
+        working_df = df_original.copy()
+        session['current_df'] = working_df
 
-    # Step 1: Generate code (with retry logic)
+    # Step 2: Generate code with retry
     max_retries = 2
-    code = None
     result = None
     error = None
+    code = None
 
     for attempt in range(max_retries + 1):
         try:
-            # Build the prompt with context
             if attempt == 0:
-                user_prompt = f"{context}Current question: {request.message}"
+                prompt = CODE_PROMPT.format(
+                    schema=DATA_SCHEMA,
+                    row_count=len(working_df),
+                    data_preview=get_data_preview(working_df),
+                    history=history_text,
+                    question=request.message
+                )
             else:
-                user_prompt = f"""{context}Current question: {request.message}
+                prompt = f"""{CODE_PROMPT.format(
+                    schema=DATA_SCHEMA,
+                    row_count=len(working_df),
+                    data_preview=get_data_preview(working_df),
+                    history=history_text,
+                    question=request.message
+                )}
 
-Your previous code failed with this error: {error}
-
-Please fix the code. Common issues:
-- String values are case-sensitive (use "credit" not "Credit")
-- Make sure column names exist
-- Use .head(20) to limit results
-
-Write corrected code:"""
+Your previous code failed with: {error}
+Fix it and try again:"""
 
             code_response = client.messages.create(
                 model="claude-opus-4-5-20251101",
                 max_tokens=1024,
-                system=CODE_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}]
+                messages=[{"role": "user", "content": prompt}]
             )
             code = code_response.content[0].text.strip()
 
-            # Clean markdown if present
+            # Clean markdown
             if code.startswith("```python"):
                 code = code[9:]
             if code.startswith("```"):
@@ -257,43 +320,38 @@ Write corrected code:"""
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Claude API error: {str(e)}")
 
-        # Execute the code
-        result, output, error = execute_code(code, df)
+        result, output, error = execute_code(code, working_df)
 
         if error is None:
-            break  # Success!
+            session['last_code'] = code
+            # If result is a DataFrame, update session's current_df for future refinements
+            if isinstance(result, pd.DataFrame):
+                session['current_df'] = result.copy()
+            break
 
-        if attempt < max_retries:
-            print(f"Attempt {attempt + 1} failed: {error}. Retrying...")
-
-    # Step 2: Generate conversational response
-    if error:
-        result_text = f"After multiple attempts, the analysis encountered an error: {error}"
-    else:
-        result_text = format_result_for_claude(result, output)
+    # Step 3: Generate response based on ACTUAL results
+    result_preview = format_result_preview(result) if error is None else f"Error: {error}"
 
     try:
-        response_prompt = f"""{context}User's question: {request.message}
-
-Analysis result:
-{result_text}
-
-Write a conversational response:"""
-
-        response_message = client.messages.create(
+        response_msg = client.messages.create(
             model="claude-opus-4-5-20251101",
             max_tokens=500,
-            system=RESPONSE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": response_prompt}]
+            messages=[{
+                "role": "user",
+                "content": RESPONSE_PROMPT.format(
+                    question=request.message,
+                    result_preview=result_preview,
+                    history=history_text
+                )
+            }]
         )
-        conversational_response = response_message.content[0].text.strip()
+        conversational_response = response_msg.content[0].text.strip()
     except Exception as e:
-        conversational_response = f"Here's what I found: {result_text}"
+        conversational_response = f"Here's what I found: {result_preview}"
 
-    # Add assistant response to history
-    add_to_history(session_id, 'assistant', conversational_response)
+    add_to_history(session, 'assistant', conversational_response)
 
-    # Step 3: Format table data if available
+    # Format table
     table_data = None
     if error is None:
         if isinstance(result, pd.DataFrame) and not result.empty:
@@ -306,13 +364,13 @@ Write a conversational response:"""
     return ChatResponse(
         response=conversational_response,
         table=table_data,
-        session_id=session_id
+        session_id=session['id']
     )
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "rows": len(df) if df is not None else 0}
+    return {"status": "ok", "rows": len(df_original) if df_original is not None else 0}
 
 
 if __name__ == "__main__":
