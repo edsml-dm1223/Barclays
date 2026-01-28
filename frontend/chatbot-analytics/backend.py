@@ -1,6 +1,6 @@
 """
 Chatbot Analytics Backend
-Allows natural language queries against transaction data using Claude API
+Conversational AI for transaction data analysis
 """
 
 import os
@@ -42,7 +42,6 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     table: list | None = None
-    code: str | None = None
 
 
 # Data schema for Claude context
@@ -64,38 +63,48 @@ Total rows: ~838,755 transactions
 """
 
 
-SYSTEM_PROMPT = f"""You are a data analyst assistant. You help users query transaction data using pandas.
+CODE_PROMPT = f"""You are a data analyst. Write Python pandas code to answer the user's question.
 
 {DATA_SCHEMA}
 
-When the user asks a question:
-1. Write Python pandas code to answer it
-2. The DataFrame is already loaded as 'df'
-3. Store your final result in a variable called 'result'
-4. If creating a table, make 'result' a DataFrame
-5. If it's a single value, store it in 'result'
-6. Keep code simple and efficient
-7. For time-based queries, df['timestamp'] is datetime with timezone
-
-IMPORTANT:
-- Only use pandas operations, no file I/O
-- Don't modify the original df, use .copy() if needed
+Rules:
+- The DataFrame is already loaded as 'df'
+- Store your final result in a variable called 'result'
+- Keep code simple and robust
+- For time-based queries, df['timestamp'] is datetime with timezone
 - For time extraction: df['timestamp'].dt.time
 - For day of week: df['timestamp'].dt.day_name()
-- Always limit large results to top 20-30 rows
+- Always limit large results to top 20 rows
+- Use .copy() when modifying data
 
-Respond with ONLY valid Python code, no explanations or markdown. The code will be executed directly."""
+Respond with ONLY valid Python code, no explanations or markdown."""
+
+
+RESPONSE_PROMPT = """You are a friendly data analyst assistant. The user asked a question about transaction data, and I've already analyzed it for you.
+
+Based on the analysis results below, write a conversational response that:
+1. Directly answers their question in plain English
+2. Highlights key insights from the data
+3. Is concise but informative (2-4 sentences)
+4. If there's tabular data, briefly describe what it shows
+
+Do NOT mention code, DataFrames, pandas, or technical implementation details. Just have a natural conversation about the data insights.
+
+User's question: {question}
+
+Analysis result:
+{result}
+
+Write your conversational response:"""
 
 
 def execute_code(code: str, dataframe: pd.DataFrame) -> tuple:
     """Safely execute pandas code and return result."""
-    # Create a restricted namespace
     namespace = {
         'pd': pd,
         'df': dataframe.copy(),
     }
 
-    # Capture stdout
     old_stdout = sys.stdout
     sys.stdout = StringIO()
 
@@ -108,6 +117,19 @@ def execute_code(code: str, dataframe: pd.DataFrame) -> tuple:
         return None, None, str(e)
     finally:
         sys.stdout = old_stdout
+
+
+def format_result_for_claude(result, output) -> str:
+    """Format the execution result for Claude to interpret."""
+    if isinstance(result, pd.DataFrame):
+        return f"DataFrame with {len(result)} rows:\n{result.head(20).to_string()}"
+    elif isinstance(result, pd.Series):
+        return f"Series:\n{result.head(20).to_string()}"
+    elif result is not None:
+        return str(result)
+    elif output:
+        return output
+    return "No result"
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -123,19 +145,17 @@ async def chat(request: ChatRequest):
 
     client = Anthropic(api_key=api_key)
 
-    # Get code from Claude
+    # Step 1: Generate code
     try:
-        message = client.messages.create(
+        code_response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": request.message}
-            ]
+            system=CODE_PROMPT,
+            messages=[{"role": "user", "content": request.message}]
         )
-        code = message.content[0].text.strip()
+        code = code_response.content[0].text.strip()
 
-        # Remove markdown code blocks if present
+        # Clean markdown if present
         if code.startswith("```python"):
             code = code[9:]
         if code.startswith("```"):
@@ -147,49 +167,46 @@ async def chat(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Claude API error: {str(e)}")
 
-    # Execute the code
+    # Step 2: Execute code
     result, output, error = execute_code(code, df)
 
+    # Step 3: Generate conversational response
     if error:
-        return ChatResponse(
-            response=f"Error executing query: {error}",
-            code=code
-        )
-
-    # Format response
-    if isinstance(result, pd.DataFrame):
-        # Convert DataFrame to list of dicts for JSON
-        table_data = result.head(50).to_dict(orient='records')
-        return ChatResponse(
-            response=f"Found {len(result)} results. Showing top {min(50, len(result))}:",
-            table=table_data,
-            code=code
-        )
-    elif isinstance(result, pd.Series):
-        # Convert Series to DataFrame
-        result_df = result.reset_index()
-        result_df.columns = ['Category', 'Value']
-        table_data = result_df.head(50).to_dict(orient='records')
-        return ChatResponse(
-            response=f"Results:",
-            table=table_data,
-            code=code
-        )
-    elif result is not None:
-        return ChatResponse(
-            response=str(result),
-            code=code
-        )
-    elif output:
-        return ChatResponse(
-            response=output,
-            code=code
-        )
+        # If code failed, ask Claude to respond gracefully
+        result_text = f"The analysis encountered an error: {error}"
     else:
-        return ChatResponse(
-            response="Query executed but no result returned.",
-            code=code
+        result_text = format_result_for_claude(result, output)
+
+    try:
+        response_message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=500,
+            messages=[{
+                "role": "user",
+                "content": RESPONSE_PROMPT.format(
+                    question=request.message,
+                    result=result_text
+                )
+            }]
         )
+        conversational_response = response_message.content[0].text.strip()
+    except Exception as e:
+        # Fallback if second call fails
+        conversational_response = f"Here's what I found: {result_text}"
+
+    # Step 4: Format table data if available
+    table_data = None
+    if isinstance(result, pd.DataFrame) and not result.empty:
+        table_data = result.head(30).to_dict(orient='records')
+    elif isinstance(result, pd.Series):
+        result_df = result.reset_index()
+        result_df.columns = ['Category', 'Value'] if len(result_df.columns) == 2 else result_df.columns
+        table_data = result_df.head(30).to_dict(orient='records')
+
+    return ChatResponse(
+        response=conversational_response,
+        table=table_data
+    )
 
 
 @app.get("/api/health")

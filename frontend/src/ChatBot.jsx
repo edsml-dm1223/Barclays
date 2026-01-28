@@ -166,8 +166,7 @@ export default function ChatBot() {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.response,
-        table: data.table,
-        code: data.code
+        table: data.table
       }])
     } catch (error) {
       setMessages(prev => [...prev, {
@@ -382,34 +381,6 @@ export default function ChatBot() {
 
               {/* Table */}
               {msg.table && renderTable(msg.table)}
-
-              {/* Code Toggle */}
-              {msg.code && (
-                <details style={{ marginTop: '16px' }}>
-                  <summary style={{
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    color: '#64748b',
-                    fontWeight: '500',
-                    padding: '8px 0',
-                    userSelect: 'none'
-                  }}>
-                    View generated code
-                  </summary>
-                  <pre style={{
-                    background: '#1e293b',
-                    color: '#e2e8f0',
-                    padding: '16px',
-                    borderRadius: '10px',
-                    fontSize: '13px',
-                    overflow: 'auto',
-                    marginTop: '8px',
-                    lineHeight: '1.5'
-                  }}>
-                    {msg.code}
-                  </pre>
-                </details>
-              )}
             </div>
           </div>
         ))}
