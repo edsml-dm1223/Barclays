@@ -39,8 +39,11 @@ SESSION_TIMEOUT = timedelta(hours=2)
 @app.on_event("startup")
 async def load_data():
     global df
-    df = pd.read_parquet(DATA_PATH)
-    print(f"Loaded {len(df):,} transactions")
+    full_df = pd.read_parquet(DATA_PATH)
+    # Sample 200K rows to fit in 512MB memory limit
+    df = full_df.sample(n=200000, random_state=42)
+    del full_df  # Free memory
+    print(f"Loaded {len(df):,} transactions (sampled)")
 
 
 class ChatRequest(BaseModel):
@@ -70,8 +73,8 @@ The DataFrame 'df' contains transaction data with these columns:
 - total_txn_by_classification: int - total transactions in this classification
 
 IMPORTANT DATA FACTS:
-- Total rows: 838,755 transactions
-- credit_debit values are LOWERCASE: "credit" (106,376 rows) and "debit" (732,379 rows)
+- Total rows: ~200,000 transactions (sampled from 838K for performance)
+- credit_debit values are LOWERCASE: "credit" or "debit"
 - All amounts are positive numbers
 """
 
@@ -235,7 +238,7 @@ Please fix the code. Common issues:
 Write corrected code:"""
 
             code_response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-opus-4-5-20251101",
                 max_tokens=1024,
                 system=CODE_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}]
@@ -278,7 +281,7 @@ Analysis result:
 Write a conversational response:"""
 
         response_message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-opus-4-5-20251101",
             max_tokens=500,
             system=RESPONSE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": response_prompt}]
