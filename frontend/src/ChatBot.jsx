@@ -112,12 +112,13 @@ export default function ChatBot() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hello! I\'m your data analytics assistant. I can help you explore your transaction data.\n\nClick any question below to get started:',
+      content: 'Hello! I\'m your data analytics assistant. I can help you explore your transaction data.\n\nClick any question below to get started, or ask me anything about your transactions:',
       suggestions: ALL_SUGGESTIONS
     }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sessionId, setSessionId] = useState(null)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -155,7 +156,10 @@ export default function ChatBot() {
       const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage })
+        body: JSON.stringify({
+          message: userMessage,
+          session_id: sessionId
+        })
       })
 
       if (!response.ok) {
@@ -163,6 +167,12 @@ export default function ChatBot() {
       }
 
       const data = await response.json()
+
+      // Save session ID for context continuity
+      if (data.session_id) {
+        setSessionId(data.session_id)
+      }
+
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.response,
