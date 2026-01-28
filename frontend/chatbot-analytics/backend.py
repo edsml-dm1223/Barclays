@@ -235,7 +235,7 @@ Please fix the code. Common issues:
 Write corrected code:"""
 
             code_response = client.messages.create(
-                model="claude-opus-4-5-20251101",
+                model="claude-sonnet-4-20250514",
                 max_tokens=1024,
                 system=CODE_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}]
@@ -278,7 +278,7 @@ Analysis result:
 Write a conversational response:"""
 
         response_message = client.messages.create(
-            model="claude-opus-4-5-20251101",
+            model="claude-sonnet-4-20250514",
             max_tokens=500,
             system=RESPONSE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": response_prompt}]
