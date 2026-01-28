@@ -39,3 +39,4 @@ def get_secret(secret_name):
 
 if __name__ == '__main__':
     get_secret("anthropic_api_key")
+    os.get('anthropic')

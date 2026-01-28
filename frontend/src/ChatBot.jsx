@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
 
 // API URL - uses environment variable for production, falls back to localhost for development
 const API_URL = import.meta.env.VITE_CHATBOT_API_URL || 'http://localhost:8000'
@@ -343,7 +344,18 @@ export default function ChatBot() {
               fontSize: '15px',
               lineHeight: '1.6'
             }}>
-              {msg.content}
+              {msg.role === 'assistant' ? (
+                <ReactMarkdown
+                  components={{
+                    p: ({children}) => <span>{children}</span>,
+                    strong: ({children}) => <strong style={{fontWeight: 700}}>{children}</strong>
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              ) : (
+                msg.content
+              )}
 
               {/* Suggestions */}
               {msg.suggestions && (
