@@ -347,8 +347,35 @@ export default function ChatBot() {
               {msg.role === 'assistant' ? (
                 <ReactMarkdown
                   components={{
-                    p: ({children}) => <span>{children}</span>,
-                    strong: ({children}) => <strong style={{fontWeight: 700}}>{children}</strong>
+                    p: ({children}) => <p style={{margin: '0 0 12px 0'}}>{children}</p>,
+                    strong: ({children}) => <strong style={{fontWeight: 700}}>{children}</strong>,
+                    table: ({children}) => (
+                      <table style={{
+                        borderCollapse: 'collapse',
+                        width: '100%',
+                        marginTop: '12px',
+                        fontSize: '14px'
+                      }}>{children}</table>
+                    ),
+                    thead: ({children}) => (
+                      <thead style={{background: '#f8fafc'}}>{children}</thead>
+                    ),
+                    th: ({children}) => (
+                      <th style={{
+                        padding: '10px 12px',
+                        borderBottom: '2px solid #e2e8f0',
+                        textAlign: 'left',
+                        fontWeight: 600
+                      }}>{children}</th>
+                    ),
+                    td: ({children}) => (
+                      <td style={{
+                        padding: '10px 12px',
+                        borderBottom: '1px solid #e2e8f0'
+                      }}>{children}</td>
+                    ),
+                    ul: ({children}) => <ul style={{margin: '8px 0', paddingLeft: '20px'}}>{children}</ul>,
+                    li: ({children}) => <li style={{marginBottom: '4px'}}>{children}</li>
                   }}
                 >
                   {msg.content}
